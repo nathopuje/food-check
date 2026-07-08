@@ -1,22 +1,13 @@
-const { fetchList, fetchByCategory, fetchByArea } = require('./mealdbClient');
+const { fetchByArea } = require('./mealdbClient');
 const { loadFallbackMeals } = require('./fallbackMeals');
 
 const POOL_TARGET_SIZE = 100;
 const REFRESH_INTERVAL_MS = 10 * 60 * 1000;
-const SOURCES_PER_REFRESH = 3;
+const CUISINE_AREAS = ['Indian'];
+const MIN_POOL_SIZE = 10;
 
 let pool = [];
 let usingFallback = true;
-
-function pickRandom(arr, count) {
-  const copy = [...arr];
-  const picked = [];
-  while (copy.length && picked.length < count) {
-    const i = Math.floor(Math.random() * copy.length);
-    picked.push(copy.splice(i, 1)[0]);
-  }
-  return picked;
-}
 
 function dedupById(meals) {
   const seen = new Map();
@@ -27,14 +18,7 @@ function dedupById(meals) {
 }
 
 async function fetchFreshPool() {
-  const [categories, areas] = await Promise.all([fetchList('c'), fetchList('a')]);
-  const chosenCategories = pickRandom(categories, SOURCES_PER_REFRESH);
-  const chosenAreas = pickRandom(areas, SOURCES_PER_REFRESH);
-
-  const results = await Promise.allSettled([
-    ...chosenCategories.map((c) => fetchByCategory(c)),
-    ...chosenAreas.map((a) => fetchByArea(a)),
-  ]);
+  const results = await Promise.allSettled(CUISINE_AREAS.map((a) => fetchByArea(a)));
 
   const meals = results
     .filter((r) => r.status === 'fulfilled')
@@ -46,7 +30,7 @@ async function fetchFreshPool() {
 async function refreshPool() {
   try {
     const fresh = await fetchFreshPool();
-    if (fresh.length >= 20) {
+    if (fresh.length >= MIN_POOL_SIZE) {
       pool = fresh;
       usingFallback = false;
       return;
