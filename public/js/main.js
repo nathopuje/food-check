@@ -22,7 +22,41 @@
     matchCard: document.getElementById('match-card'),
     restartFromMatch: document.getElementById('btn-restart-from-match'),
     restartFromNomatch: document.getElementById('btn-restart-from-nomatch'),
+    mealTypeChips: document.getElementById('meal-type-chips'),
   };
+
+  const MEAL_TYPES = ['breakfast', 'lunch', 'snacks', 'dessert'];
+  let selectedMealTypes = new Set(['all']);
+
+  function renderMealTypeChips() {
+    el.mealTypeChips.querySelectorAll('.chip').forEach((chip) => {
+      chip.classList.toggle('active', selectedMealTypes.has(chip.dataset.mealType));
+    });
+  }
+
+  el.mealTypeChips.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    const type = chip.dataset.mealType;
+    if (type === 'all') {
+      selectedMealTypes = new Set(['all']);
+    } else {
+      selectedMealTypes.delete('all');
+      if (selectedMealTypes.has(type)) {
+        selectedMealTypes.delete(type);
+      } else {
+        selectedMealTypes.add(type);
+      }
+      if (selectedMealTypes.size === 0 || selectedMealTypes.size === MEAL_TYPES.length) {
+        selectedMealTypes = new Set(['all']);
+      }
+    }
+    renderMealTypeChips();
+  });
+
+  function getSelectedMealTypes() {
+    return selectedMealTypes.has('all') ? [] : [...selectedMealTypes];
+  }
 
   const state = {
     roomCode: null,
@@ -96,7 +130,7 @@
   // --- Landing actions ---
   el.createBtn.addEventListener('click', () => {
     clearLandingError();
-    ws.send('create_room');
+    ws.send('create_room', { mealTypes: getSelectedMealTypes() });
   });
 
   el.joinBtn.addEventListener('click', () => {

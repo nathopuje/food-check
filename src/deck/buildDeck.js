@@ -11,8 +11,12 @@ function shuffle(arr) {
   return copy;
 }
 
-function buildDeck(size = DECK_SIZE) {
-  const pool = getPool();
+function buildDeck(size = DECK_SIZE, mealTypes = []) {
+  let pool = getPool();
+  if (mealTypes.length > 0) {
+    const filtered = pool.filter((dish) => (dish.mealTypes || []).some((t) => mealTypes.includes(t)));
+    if (filtered.length > 0) pool = filtered;
+  }
   const count = Math.min(size, pool.length);
   return shuffle(pool).slice(0, count);
 }

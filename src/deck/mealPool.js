@@ -1,5 +1,6 @@
-const { fetchByArea } = require('./mealdbClient');
+const { fetchByArea, lookupMeal } = require('./mealdbClient');
 const { loadFallbackMeals } = require('./fallbackMeals');
+const { categoryToMealTypes } = require('./mealTypes');
 
 const POOL_TARGET_SIZE = 100;
 const REFRESH_INTERVAL_MS = 10 * 60 * 1000;
@@ -17,6 +18,15 @@ function dedupById(meals) {
   return [...seen.values()];
 }
 
+async function enrichWithMealTypes(meals) {
+  const details = await Promise.allSettled(meals.map((m) => lookupMeal(m.id)));
+  return meals.map((meal, i) => {
+    const detail = details[i].status === 'fulfilled' ? details[i].value : null;
+    const category = detail && detail.category;
+    return { ...meal, category: category || meal.category, mealTypes: categoryToMealTypes(category) };
+  });
+}
+
 async function fetchFreshPool() {
   const results = await Promise.allSettled(CUISINE_AREAS.map((a) => fetchByArea(a)));
 
@@ -24,7 +34,7 @@ async function fetchFreshPool() {
     .filter((r) => r.status === 'fulfilled')
     .flatMap((r) => r.value);
 
-  return dedupById(meals);
+  return enrichWithMealTypes(dedupById(meals));
 }
 
 async function refreshPool() {

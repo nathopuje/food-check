@@ -26,6 +26,7 @@ function mapMeal(raw, category, area) {
     emoji: null,
     category: raw.strCategory || category || null,
     area: raw.strArea || area || null,
+    mealTypes: null,
   };
 }
 

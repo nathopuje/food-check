@@ -8,9 +8,9 @@ class RoomManager {
     this.rooms = new Map();
   }
 
-  createRoom() {
+  createRoom(mealTypes) {
     const code = generateUniqueCode((c) => this.rooms.has(c));
-    const room = new Room(code);
+    const room = new Room(code, mealTypes);
     this.rooms.set(code, room);
     return room;
   }

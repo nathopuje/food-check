@@ -1,5 +1,6 @@
 const { parseClientMessage, dishForWire, send } = require('./protocol');
 const { lookupMeal } = require('../deck/mealdbClient');
+const { sanitizeMealTypes } = require('../deck/mealTypes');
 
 function deckForWire(deck) {
   return deck.map(dishForWire);
@@ -58,7 +59,7 @@ function createConnectionHandler(roomManager) {
 
       switch (msg.type) {
         case 'create_room': {
-          const room = roomManager.createRoom();
+          const room = roomManager.createRoom(sanitizeMealTypes(msg.mealTypes));
           const slot = room.addPlayer(ws);
           conn.roomCode = room.code;
           conn.slot = slot;
@@ -151,7 +152,7 @@ function createConnectionHandler(roomManager) {
             send(ws, 'error', { code: 'not_in_room', message: 'You are not in an active room.' });
             return;
           }
-          room.restartDeck();
+          room.restartDeck(msg.mealTypes ? sanitizeMealTypes(msg.mealTypes) : undefined);
           broadcastDeckReady(room);
           break;
         }

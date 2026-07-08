@@ -15,6 +15,7 @@ function loadFallbackMeals() {
       emoji: meal.emoji,
       category: meal.category,
       area: meal.area,
+      mealTypes: meal.mealTypes || [],
     }));
   }
   return cached;

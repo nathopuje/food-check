@@ -16,10 +16,11 @@ function freshRoundState(deck) {
 }
 
 class Room {
-  constructor(code) {
+  constructor(code, mealTypes = []) {
     this.code = code;
+    this.mealTypes = mealTypes;
     this.players = { 1: null, 2: null };
-    this.round = freshRoundState(buildDeck());
+    this.round = freshRoundState(buildDeck(undefined, mealTypes));
     this.createdAt = Date.now();
     this.lastActivityAt = Date.now();
   }
@@ -88,8 +89,9 @@ class Room {
     return false;
   }
 
-  restartDeck() {
-    this.round = freshRoundState(buildDeck());
+  restartDeck(mealTypes) {
+    if (mealTypes) this.mealTypes = mealTypes;
+    this.round = freshRoundState(buildDeck(undefined, this.mealTypes));
     this.touch();
   }
 

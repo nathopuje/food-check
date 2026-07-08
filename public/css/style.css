@@ -74,6 +74,29 @@ body {
   gap: 8px;
 }
 
+.meal-type-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  border: 1px solid rgba(255, 90, 95, 0.3);
+  background: transparent;
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
 #input-room-code {
   flex: 1;
   padding: 12px;
