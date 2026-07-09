@@ -1,13 +1,21 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { Room } = require('../src/rooms/Room');
+const { Room, MAX_PLAYERS, MIN_PLAYERS_TO_START } = require('../src/rooms/Room');
 
-function makeRoomWithDeck(deck) {
+function makeRoomWithDeck(deck, playerSlots = [1, 2]) {
   const room = new Room('TEST1');
+  room.started = true;
+  const likes = {};
+  const index = {};
+  for (const slot of playerSlots) {
+    likes[slot] = new Set();
+    index[slot] = 0;
+  }
   room.round = {
     deck,
-    likes: { 1: new Set(), 2: new Set() },
-    index: { 1: 0, 2: 0 },
+    likes,
+    index,
+    playerSlots,
     matched: false,
     matchedDish: null,
   };
@@ -80,4 +88,52 @@ test('swipes after a match are rejected', () => {
   const result = room.applySwipe(1, 'b', 'like');
   assert.equal(result.ok, false);
   assert.equal(result.error.code, 'already_matched');
+});
+
+test('a match requires every player in a >2-person room to like the dish', () => {
+  const room = makeRoomWithDeck(SAMPLE_DECK, [1, 2, 3]);
+
+  room.applySwipe(1, 'a', 'like');
+  const twoOfThree = room.applySwipe(2, 'a', 'like');
+  assert.notEqual(twoOfThree.event, 'match_found');
+  assert.equal(room.round.matched, false);
+
+  const allThree = room.applySwipe(3, 'a', 'like');
+  assert.equal(allThree.event, 'match_found');
+  assert.equal(room.round.matched, true);
+});
+
+test('applySwipe is rejected before the host starts the game', () => {
+  const room = new Room('NOSTART');
+  room.addPlayer({});
+  room.addPlayer({});
+  const result = room.applySwipe(1, 'anything', 'like');
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'not_started');
+});
+
+test('a room accepts up to MAX_PLAYERS and rejects further joins', () => {
+  const room = new Room('FULLROOM');
+  const slots = [];
+  for (let i = 0; i < MAX_PLAYERS; i++) {
+    slots.push(room.addPlayer({}));
+  }
+  assert.deepEqual(slots, [1, 2, 3, 4, 5]);
+  assert.equal(room.isFull(), true);
+  assert.equal(room.addPlayer({}), null);
+});
+
+test('canStart requires at least MIN_PLAYERS_TO_START and flips off once started', () => {
+  const room = new Room('STARTGATE');
+  assert.equal(room.canStart(), false);
+  room.addPlayer({});
+  assert.equal(room.canStart(), false, 'a lone host should not be able to start');
+  room.addPlayer({});
+  assert.equal(room.occupiedCount() >= MIN_PLAYERS_TO_START, true);
+  assert.equal(room.canStart(), true);
+  const started = room.startGame();
+  assert.equal(started, true);
+  assert.equal(room.started, true);
+  assert.equal(room.canStart(), false);
+  assert.deepEqual(room.round.playerSlots, [1, 2]);
 });

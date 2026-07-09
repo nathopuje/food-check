@@ -40,11 +40,13 @@
 
       <!-- Waiting -->
       <section id="view-waiting" class="view" hidden>
-        <p>Share this with your partner:</p>
+        <p>Share this code — up to 5 people can join:</p>
         <div class="room-code-display" id="room-code-display"></div>
         <button id="btn-copy-link" class="btn btn-secondary">Copy invite link</button>
-        <div class="spinner"></div>
-        <p>Waiting for them to join…</p>
+        <p id="member-count-text" class="member-count-text"></p>
+        <button id="btn-start-game" class="btn btn-primary" hidden>Start Swiping</button>
+        <div class="spinner" id="waiting-spinner"></div>
+        <p id="waiting-hint"></p>
       </section>
 
       <!-- Swipe -->

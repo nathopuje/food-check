@@ -24,6 +24,9 @@
     restartFromNomatch: document.getElementById('btn-restart-from-nomatch'),
     mealTypeChips: document.getElementById('meal-type-chips'),
     closeRoomBtn: document.getElementById('btn-close-room'),
+    memberCountText: document.getElementById('member-count-text'),
+    startGameBtn: document.getElementById('btn-start-game'),
+    waitingHint: document.getElementById('waiting-hint'),
   };
 
   const MEAL_TYPES = ['breakfast', 'lunch', 'snacks', 'dessert'];
@@ -64,7 +67,41 @@
     playerToken: null,
     playerSlot: null,
     deckLength: 0,
+    occupiedCount: 1,
+    maxPlayers: 5,
+    minPlayersToStart: 2,
+    started: false,
   };
+
+  const HOST_SLOT = 1;
+
+  function updateLobbyUI() {
+    const isHost = state.playerSlot === HOST_SLOT;
+    el.memberCountText.textContent = `${state.occupiedCount} of ${state.maxPlayers} joined`;
+    const canStart = isHost && !state.started && state.occupiedCount >= state.minPlayersToStart;
+    el.startGameBtn.hidden = !canStart;
+    if (isHost) {
+      el.waitingHint.hidden = canStart;
+      el.waitingHint.textContent = 'Waiting for at least one more player to join…';
+    } else {
+      el.waitingHint.hidden = false;
+      el.waitingHint.textContent = 'Waiting for the host to start…';
+    }
+  }
+
+  function enterWaitingRoom(msg) {
+    state.roomCode = msg.roomCode;
+    state.playerToken = msg.playerToken;
+    state.playerSlot = msg.playerSlot;
+    state.occupiedCount = msg.occupiedCount;
+    state.maxPlayers = msg.maxPlayers;
+    state.minPlayersToStart = msg.minPlayersToStart;
+    state.started = msg.started;
+    saveSession();
+    el.roomCodeDisplay.textContent = msg.roomCode;
+    updateLobbyUI();
+    showView('waiting');
+  }
 
   function showView(name) {
     Object.entries(views).forEach(([key, section]) => {
@@ -167,35 +204,29 @@
   el.restartFromNomatch.addEventListener('click', () => ws.send('restart_deck'));
 
   el.closeRoomBtn.addEventListener('click', () => {
-    if (window.confirm('Close this room for both of you?')) {
+    if (window.confirm('Close this room for everyone?')) {
       ws.send('close_room');
     }
   });
 
+  el.startGameBtn.addEventListener('click', () => {
+    ws.send('start_game');
+  });
+
   // --- Server events ---
-  ws.on('room_created', (msg) => {
-    state.roomCode = msg.roomCode;
-    state.playerToken = msg.playerToken;
-    state.playerSlot = msg.playerSlot;
-    saveSession();
-    el.roomCodeDisplay.textContent = msg.roomCode;
-    showView('waiting');
-  });
+  ws.on('room_created', enterWaitingRoom);
+  ws.on('joined', enterWaitingRoom);
 
-  ws.on('joined', (msg) => {
-    state.roomCode = msg.roomCode;
-    state.playerToken = msg.playerToken;
-    state.playerSlot = msg.playerSlot;
-    saveSession();
-    showView('waiting');
-  });
-
-  ws.on('player_joined', () => {
-    // deck_ready will follow shortly and move us to the swipe view
+  ws.on('room_status', (msg) => {
+    state.occupiedCount = msg.occupiedCount;
+    state.maxPlayers = msg.maxPlayers;
+    state.minPlayersToStart = msg.minPlayersToStart;
+    state.started = msg.started;
+    updateLobbyUI();
   });
 
   ws.on('player_disconnected', () => {
-    el.opponentBanner.textContent = 'Partner disconnected — waiting…';
+    el.opponentBanner.textContent = 'Someone disconnected — waiting…';
     el.opponentBanner.hidden = false;
   });
 
@@ -214,6 +245,7 @@
   });
 
   ws.on('deck_ready', (msg) => {
+    state.started = true;
     state.deckLength = msg.deck.length;
     state.lastDeck = msg.deck;
     deck.setDeck(msg.deck, 0);
@@ -244,6 +276,8 @@
     } else if (msg.code === 'out_of_order' && typeof msg.nextIndex === 'number' && state.lastDeck) {
       deck.setDeck(state.lastDeck, msg.nextIndex);
       updateProgress();
+    } else if (['not_host', 'not_enough_players', 'not_started'].includes(msg.code)) {
+      window.alert(msg.message || 'Something went wrong.');
     }
   });
 

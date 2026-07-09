@@ -2,6 +2,7 @@ const CLIENT_MESSAGE_TYPES = new Set([
   'create_room',
   'join_room',
   'rejoin',
+  'start_game',
   'swipe',
   'restart_deck',
   'leave_room',

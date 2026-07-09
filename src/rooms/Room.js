@@ -1,15 +1,23 @@
 const { randomUUID } = require('crypto');
 const { buildDeck } = require('../deck/buildDeck');
 
-const OTHER_SLOT = { 1: 2, 2: 1 };
+const MAX_PLAYERS = 5;
+const MIN_PLAYERS_TO_START = 2;
 const GRACE_MS = 2 * 60 * 1000;
 const IDLE_MS = 30 * 60 * 1000;
 
-function freshRoundState(deck) {
+function freshRoundState(deck, playerSlots) {
+  const likes = {};
+  const index = {};
+  for (const slot of playerSlots) {
+    likes[slot] = new Set();
+    index[slot] = 0;
+  }
   return {
     deck,
-    likes: { 1: new Set(), 2: new Set() },
-    index: { 1: 0, 2: 0 },
+    likes,
+    index,
+    playerSlots,
     matched: false,
     matchedDish: null,
   };
@@ -19,8 +27,10 @@ class Room {
   constructor(code, mealTypes = []) {
     this.code = code;
     this.mealTypes = mealTypes;
-    this.players = { 1: null, 2: null };
-    this.round = freshRoundState(buildDeck(undefined, mealTypes));
+    this.started = false;
+    this.players = {};
+    for (let i = 1; i <= MAX_PLAYERS; i++) this.players[i] = null;
+    this.round = freshRoundState([], []);
     this.createdAt = Date.now();
     this.lastActivityAt = Date.now();
   }
@@ -29,13 +39,35 @@ class Room {
     this.lastActivityAt = Date.now();
   }
 
+  occupiedSlots() {
+    const slots = [];
+    for (let i = 1; i <= MAX_PLAYERS; i++) {
+      if (this.players[i]) slots.push(i);
+    }
+    return slots;
+  }
+
+  occupiedCount() {
+    return this.occupiedSlots().length;
+  }
+
   isFull() {
-    return this.players[1] && this.players[2];
+    return this.occupiedCount() >= MAX_PLAYERS;
+  }
+
+  canStart() {
+    return !this.started && this.occupiedCount() >= MIN_PLAYERS_TO_START;
   }
 
   addPlayer(ws) {
-    const slot = this.players[1] ? 2 : 1;
-    if (this.players[slot]) return null;
+    let slot = null;
+    for (let i = 1; i <= MAX_PLAYERS; i++) {
+      if (!this.players[i]) {
+        slot = i;
+        break;
+      }
+    }
+    if (!slot) return null;
     const playerToken = randomUUID();
     this.players[slot] = { ws, token: playerToken, connected: true, disconnectedAt: null };
     this.touch();
@@ -43,8 +75,9 @@ class Room {
   }
 
   findSlotByToken(token) {
-    if (this.players[1] && this.players[1].token === token) return 1;
-    if (this.players[2] && this.players[2].token === token) return 2;
+    for (let i = 1; i <= MAX_PLAYERS; i++) {
+      if (this.players[i] && this.players[i].token === token) return i;
+    }
     return null;
   }
 
@@ -63,35 +96,34 @@ class Room {
     this.touch();
   }
 
-  bothConnected() {
-    return Boolean(
-      this.players[1] && this.players[1].connected &&
-      this.players[2] && this.players[2].connected,
-    );
-  }
-
   anyConnected() {
-    return Boolean(
-      (this.players[1] && this.players[1].connected) ||
-      (this.players[2] && this.players[2].connected),
-    );
+    return this.occupiedSlots().some((slot) => this.players[slot].connected);
   }
 
   isStale() {
     const now = Date.now();
     if (now - this.lastActivityAt > IDLE_MS) return true;
-    for (const slot of [1, 2]) {
+    for (const slot of this.occupiedSlots()) {
       const p = this.players[slot];
-      if (p && !p.connected && p.disconnectedAt && now - p.disconnectedAt > GRACE_MS) {
+      if (!p.connected && p.disconnectedAt && now - p.disconnectedAt > GRACE_MS) {
         return true;
       }
     }
     return false;
   }
 
+  startGame() {
+    if (!this.canStart()) return false;
+    this.started = true;
+    this.round = freshRoundState(buildDeck(undefined, this.mealTypes), this.occupiedSlots());
+    this.touch();
+    return true;
+  }
+
   restartDeck(mealTypes) {
     if (mealTypes) this.mealTypes = mealTypes;
-    this.round = freshRoundState(buildDeck(undefined, this.mealTypes));
+    const slots = this.round.playerSlots.length ? this.round.playerSlots : this.occupiedSlots();
+    this.round = freshRoundState(buildDeck(undefined, this.mealTypes), slots);
     this.touch();
   }
 
@@ -102,6 +134,9 @@ class Room {
    */
   applySwipe(slot, dishId, direction) {
     const round = this.round;
+    if (!this.started) {
+      return { ok: false, error: { code: 'not_started', message: 'The host has not started swiping yet.' } };
+    }
     if (round.matched) {
       return { ok: false, error: { code: 'already_matched', message: 'This round already ended.' } };
     }
@@ -117,8 +152,8 @@ class Room {
 
     if (direction === 'like') {
       round.likes[slot].add(dishId);
-      const otherSlot = OTHER_SLOT[slot];
-      if (round.likes[otherSlot].has(dishId)) {
+      const allLiked = round.playerSlots.every((s) => round.likes[s].has(dishId));
+      if (allLiked) {
         round.matched = true;
         round.matchedDish = expectedDish;
         this.touch();
@@ -129,8 +164,8 @@ class Room {
     round.index[slot] += 1;
     this.touch();
 
-    const bothDone = round.index[1] >= round.deck.length && round.index[2] >= round.deck.length;
-    if (bothDone) {
+    const allDone = round.playerSlots.every((s) => round.index[s] >= round.deck.length);
+    if (allDone) {
       return { ok: true, event: 'deck_exhausted', nextIndex: round.index[slot] };
     }
 
@@ -138,4 +173,4 @@ class Room {
   }
 }
 
-module.exports = { Room, GRACE_MS, IDLE_MS };
+module.exports = { Room, MAX_PLAYERS, MIN_PLAYERS_TO_START, GRACE_MS, IDLE_MS };

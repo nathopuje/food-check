@@ -1,35 +1,47 @@
 const { parseClientMessage, dishForWire, send } = require('./protocol');
 const { lookupMeal } = require('../deck/mealdbClient');
 const { sanitizeMealTypes } = require('../deck/mealTypes');
+const { MAX_PLAYERS, MIN_PLAYERS_TO_START } = require('../rooms/Room');
+
+const HOST_SLOT = 1;
 
 function deckForWire(deck) {
   return deck.map(dishForWire);
 }
 
+function connectedSlots(room) {
+  return room.occupiedSlots().filter((slot) => room.players[slot].connected);
+}
+
 function broadcastDeckReady(room) {
-  for (const slot of [1, 2]) {
-    const player = room.players[slot];
-    if (player && player.connected) {
-      send(player.ws, 'deck_ready', { deck: deckForWire(room.round.deck) });
-    }
+  for (const slot of connectedSlots(room)) {
+    send(room.players[slot].ws, 'deck_ready', { deck: deckForWire(room.round.deck) });
   }
 }
 
-function broadcastToOther(room, slot, type, payload) {
-  const otherSlot = slot === 1 ? 2 : 1;
-  const other = room.players[otherSlot];
-  if (other && other.connected) {
-    send(other.ws, type, payload);
+function broadcastToOthers(room, senderSlot, type, payload) {
+  for (const slot of connectedSlots(room)) {
+    if (slot !== senderSlot) send(room.players[slot].ws, type, payload);
   }
 }
 
 function broadcastToRoom(room, type, payload) {
-  for (const slot of [1, 2]) {
-    const player = room.players[slot];
-    if (player && player.connected) {
-      send(player.ws, type, payload);
-    }
+  for (const slot of connectedSlots(room)) {
+    send(room.players[slot].ws, type, payload);
   }
+}
+
+function roomStatusPayload(room) {
+  return {
+    occupiedCount: room.occupiedCount(),
+    maxPlayers: MAX_PLAYERS,
+    minPlayersToStart: MIN_PLAYERS_TO_START,
+    started: room.started,
+  };
+}
+
+function broadcastRoomStatus(room) {
+  broadcastToRoom(room, 'room_status', roomStatusPayload(room));
 }
 
 async function broadcastMatch(room, dish) {
@@ -67,6 +79,7 @@ function createConnectionHandler(roomManager) {
             roomCode: room.code,
             playerToken: room.players[slot].token,
             playerSlot: slot,
+            ...roomStatusPayload(room),
           });
           break;
         }
@@ -77,8 +90,12 @@ function createConnectionHandler(roomManager) {
             send(ws, 'error', { code: 'room_not_found', message: 'That room code was not found.' });
             return;
           }
+          if (room.started) {
+            send(ws, 'error', { code: 'room_started', message: 'This session has already started.' });
+            return;
+          }
           if (room.isFull()) {
-            send(ws, 'error', { code: 'room_full', message: 'This room already has two players.' });
+            send(ws, 'error', { code: 'room_full', message: `This room already has ${MAX_PLAYERS} players.` });
             return;
           }
           const slot = room.addPlayer(ws);
@@ -88,11 +105,9 @@ function createConnectionHandler(roomManager) {
             roomCode: room.code,
             playerToken: room.players[slot].token,
             playerSlot: slot,
+            ...roomStatusPayload(room),
           });
-          broadcastToOther(room, slot, 'player_joined', { playerSlot: slot, connectedCount: 2 });
-          if (room.isFull()) {
-            broadcastDeckReady(room);
-          }
+          broadcastRoomStatus(room);
           break;
         }
 
@@ -113,14 +128,39 @@ function createConnectionHandler(roomManager) {
 
           if (room.round.matched) {
             send(ws, 'match_found', { dish: dishForWire(room.round.matchedDish) });
-          } else if (room.isFull()) {
-            const bothDone = room.round.index[1] >= room.round.deck.length &&
-              room.round.index[2] >= room.round.deck.length;
+          } else if (room.started) {
+            const allDone = room.round.playerSlots.every((s) => room.round.index[s] >= room.round.deck.length);
             send(ws, 'deck_ready', { deck: deckForWire(room.round.deck) });
             send(ws, 'swipe_ack', { nextIndex: room.round.index[slot] });
-            if (bothDone) send(ws, 'deck_exhausted', {});
+            if (allDone) send(ws, 'deck_exhausted', {});
+          } else {
+            send(ws, 'joined', {
+              roomCode: room.code,
+              playerToken: msg.playerToken,
+              playerSlot: slot,
+              ...roomStatusPayload(room),
+            });
           }
-          broadcastToOther(room, slot, 'player_reconnected', { playerSlot: slot });
+          broadcastRoomStatus(room);
+          break;
+        }
+
+        case 'start_game': {
+          const room = roomManager.getRoom(conn.roomCode);
+          if (!room || !conn.slot) {
+            send(ws, 'error', { code: 'not_in_room', message: 'You are not in an active room.' });
+            return;
+          }
+          if (conn.slot !== HOST_SLOT) {
+            send(ws, 'error', { code: 'not_host', message: 'Only the host can start the session.' });
+            return;
+          }
+          if (room.occupiedCount() < MIN_PLAYERS_TO_START) {
+            send(ws, 'error', { code: 'not_enough_players', message: 'Wait for at least one more player to join.' });
+            return;
+          }
+          const started = room.startGame();
+          if (started) broadcastDeckReady(room);
           break;
         }
 
@@ -152,6 +192,10 @@ function createConnectionHandler(roomManager) {
             send(ws, 'error', { code: 'not_in_room', message: 'You are not in an active room.' });
             return;
           }
+          if (!room.started) {
+            send(ws, 'error', { code: 'not_started', message: 'The session has not started yet.' });
+            return;
+          }
           room.restartDeck(msg.mealTypes ? sanitizeMealTypes(msg.mealTypes) : undefined);
           broadcastDeckReady(room);
           break;
@@ -161,7 +205,8 @@ function createConnectionHandler(roomManager) {
           const room = roomManager.getRoom(conn.roomCode);
           if (room && conn.slot) {
             room.markDisconnected(conn.slot);
-            broadcastToOther(room, conn.slot, 'player_disconnected', { playerSlot: conn.slot });
+            broadcastToOthers(room, conn.slot, 'player_disconnected', { playerSlot: conn.slot });
+            broadcastRoomStatus(room);
           }
           conn.roomCode = null;
           conn.slot = null;
@@ -192,7 +237,8 @@ function createConnectionHandler(roomManager) {
       if (!room) return;
       room.markDisconnected(conn.slot);
       if (room.anyConnected()) {
-        broadcastToOther(room, conn.slot, 'player_disconnected', { playerSlot: conn.slot });
+        broadcastToOthers(room, conn.slot, 'player_disconnected', { playerSlot: conn.slot });
+        broadcastRoomStatus(room);
       }
     });
   };
