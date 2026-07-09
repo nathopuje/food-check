@@ -168,6 +168,19 @@ function createConnectionHandler(roomManager) {
           break;
         }
 
+        case 'close_room': {
+          const room = roomManager.getRoom(conn.roomCode);
+          if (!room || !conn.slot) {
+            send(ws, 'error', { code: 'not_in_room', message: 'You are not in an active room.' });
+            return;
+          }
+          broadcastToRoom(room, 'room_closed', { reason: 'closed_by_player' });
+          roomManager.deleteRoom(room.code);
+          conn.roomCode = null;
+          conn.slot = null;
+          break;
+        }
+
         default:
           break;
       }

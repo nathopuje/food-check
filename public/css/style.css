@@ -34,15 +34,40 @@ body {
   max-width: 480px;
   margin: 0 auto;
   padding: 16px;
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }
 
-.app-header h1 {
-  font-size: 1.4rem;
-  text-align: center;
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   margin: 8px 0 20px;
+}
+
+.app-header h1 {
+  flex: 1;
+  min-width: 0;
+  font-size: clamp(1.1rem, 5vw, 1.4rem);
+  text-align: center;
+  margin: 0;
+}
+
+.btn-close-room {
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 90, 95, 0.3);
+  background: transparent;
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
 .view {
@@ -72,6 +97,7 @@ body {
 .join-row {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .meal-type-chips {
@@ -89,6 +115,7 @@ body {
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .chip.active {
@@ -117,6 +144,7 @@ body {
   font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .btn-primary {
@@ -135,12 +163,13 @@ body {
 }
 
 .room-code-display {
-  font-size: 2.4rem;
-  letter-spacing: 6px;
+  font-size: clamp(1.8rem, 9vw, 2.4rem);
+  letter-spacing: clamp(3px, 1.5vw, 6px);
   font-weight: 700;
   padding: 10px 20px;
   background: var(--card-bg);
   border-radius: var(--radius);
+  text-align: center;
 }
 
 .spinner {
@@ -178,7 +207,7 @@ body {
 .card-stack {
   position: relative;
   width: 100%;
-  height: 420px;
+  height: clamp(280px, 52vh, 420px);
 }
 
 .food-card {
@@ -322,4 +351,31 @@ body {
 
 [hidden] {
   display: none !important;
+}
+
+@media (max-width: 360px) {
+  .app {
+    padding: 12px;
+  }
+
+  .swipe-buttons {
+    gap: 16px;
+  }
+
+  .btn-round {
+    width: 52px;
+    height: 52px;
+    font-size: 1.3rem;
+  }
+
+  .match-card {
+    width: 100%;
+    max-width: 260px;
+  }
+}
+
+@media (max-height: 640px) {
+  .card-stack {
+    height: clamp(240px, 46vh, 380px);
+  }
 }

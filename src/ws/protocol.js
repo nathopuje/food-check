@@ -5,6 +5,7 @@ const CLIENT_MESSAGE_TYPES = new Set([
   'swipe',
   'restart_deck',
   'leave_room',
+  'close_room',
 ]);
 
 function parseClientMessage(raw) {

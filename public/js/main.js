@@ -23,6 +23,7 @@
     restartFromMatch: document.getElementById('btn-restart-from-match'),
     restartFromNomatch: document.getElementById('btn-restart-from-nomatch'),
     mealTypeChips: document.getElementById('meal-type-chips'),
+    closeRoomBtn: document.getElementById('btn-close-room'),
   };
 
   const MEAL_TYPES = ['breakfast', 'lunch', 'snacks', 'dessert'];
@@ -69,6 +70,7 @@
     Object.entries(views).forEach(([key, section]) => {
       section.hidden = key !== name;
     });
+    el.closeRoomBtn.hidden = name === 'landing';
   }
 
   function showLandingError(message) {
@@ -164,6 +166,12 @@
   el.restartFromMatch.addEventListener('click', () => ws.send('restart_deck'));
   el.restartFromNomatch.addEventListener('click', () => ws.send('restart_deck'));
 
+  el.closeRoomBtn.addEventListener('click', () => {
+    if (window.confirm('Close this room for both of you?')) {
+      ws.send('close_room');
+    }
+  });
+
   // --- Server events ---
   ws.on('room_created', (msg) => {
     state.roomCode = msg.roomCode;
@@ -197,9 +205,11 @@
 
   ws.on('room_closed', (msg) => {
     clearSession();
-    showLandingError(
-      msg.reason === 'partner_left' ? 'Your partner left the session.' : 'The session ended.',
-    );
+    const messages = {
+      partner_left: 'Your partner left the session.',
+      closed_by_player: 'The room was closed.',
+    };
+    showLandingError(messages[msg.reason] || 'The session ended.');
     showView('landing');
   });
 
