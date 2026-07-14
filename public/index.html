@@ -16,7 +16,7 @@
     <main id="view-root">
       <!-- Landing -->
       <section id="view-landing" class="view">
-        <p class="tagline">Swipe together. First dish you both like wins.</p>
+        <p class="tagline">Swipe together. See every dish 2 or more of you liked, ranked by agreement.</p>
         <div class="card-panel">
           <label>What are we ordering for?</label>
           <div class="meal-type-chips" id="meal-type-chips">
@@ -53,7 +53,6 @@
       <section id="view-swipe" class="view" hidden>
         <div class="progress-row">
           <span id="progress-text"></span>
-          <span id="opponent-banner" class="opponent-banner" hidden></span>
         </div>
         <div id="card-stack" class="card-stack"></div>
         <div class="swipe-buttons">
@@ -62,25 +61,16 @@
         </div>
       </section>
 
-      <!-- Match -->
-      <section id="view-match" class="view" hidden>
-        <div class="match-celebration">
-          <h2>It's a Match! 🎉</h2>
-          <div class="match-card" id="match-card"></div>
-          <button id="btn-restart-from-match" class="btn btn-primary">New Round</button>
-        </div>
-      </section>
-
-      <!-- No match -->
-      <section id="view-nomatch" class="view" hidden>
-        <h2>No match this round 🤷</h2>
-        <p>You two are picky. Try again with a fresh deck?</p>
-        <button id="btn-restart-from-nomatch" class="btn btn-primary">Try Again</button>
+      <!-- Results -->
+      <section id="view-results" class="view" hidden>
+        <h2 id="results-heading"></h2>
+        <div id="results-list" class="results-list"></div>
+        <button id="btn-restart-from-results" class="btn btn-primary">New Round</button>
       </section>
     </main>
   </div>
 
-  <script src="/js/wsClient.js"></script>
+  <script src="/js/roomClient.js"></script>
   <script src="/js/swipeDeck.js"></script>
   <script src="/js/main.js"></script>
 </body>

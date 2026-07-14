@@ -3,8 +3,7 @@
     landing: document.getElementById('view-landing'),
     waiting: document.getElementById('view-waiting'),
     swipe: document.getElementById('view-swipe'),
-    match: document.getElementById('view-match'),
-    nomatch: document.getElementById('view-nomatch'),
+    results: document.getElementById('view-results'),
   };
 
   const el = {
@@ -16,12 +15,11 @@
     copyLinkBtn: document.getElementById('btn-copy-link'),
     cardStack: document.getElementById('card-stack'),
     progressText: document.getElementById('progress-text'),
-    opponentBanner: document.getElementById('opponent-banner'),
     passBtn: document.getElementById('btn-pass'),
     likeBtn: document.getElementById('btn-like'),
-    matchCard: document.getElementById('match-card'),
-    restartFromMatch: document.getElementById('btn-restart-from-match'),
-    restartFromNomatch: document.getElementById('btn-restart-from-nomatch'),
+    resultsHeading: document.getElementById('results-heading'),
+    resultsList: document.getElementById('results-list'),
+    restartFromResults: document.getElementById('btn-restart-from-results'),
     mealTypeChips: document.getElementById('meal-type-chips'),
     closeRoomBtn: document.getElementById('btn-close-room'),
     memberCountText: document.getElementById('member-count-text'),
@@ -136,11 +134,11 @@
     sessionStorage.removeItem('foodMatch.playerToken');
   }
 
-  const ws = window.createWsClient();
+  const room = window.createRoomClient();
 
   const deck = window.createSwipeDeck(el.cardStack, {
     onCommit(dish, direction) {
-      ws.send('swipe', { dishId: dish.id, direction });
+      room.send('swipe', { dishId: dish.id, direction });
       updateProgress();
     },
   });
@@ -152,24 +150,57 @@
       : 'All done';
   }
 
-  function renderDishCard(container, dish) {
-    const mediaHtml = dish.imageUrl
-      ? `<div class="card-media"><img src="${dish.imageUrl}" alt="${dish.name}" onerror="this.parentElement.textContent='${dish.emoji || '🍽️'}'" /></div>`
-      : `<div class="card-media">${dish.emoji || '🍽️'}</div>`;
-    container.innerHTML = `
-      ${mediaHtml}
-      <div class="card-info">
-        <h3>${dish.name}</h3>
-        <p>${[dish.area, dish.category].filter(Boolean).join(' · ')}</p>
-        ${dish.description ? `<p>${dish.description}</p>` : ''}
-      </div>
-    `;
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, (c) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[c]));
+  }
+
+  function renderResults(results) {
+    const total = state.occupiedCount;
+    if (results.length === 0) {
+      el.resultsHeading.textContent = 'No dish got 2 or more likes 🤷';
+      el.resultsList.innerHTML = '<p class="results-empty">Try again with a fresh deck?</p>';
+      return;
+    }
+
+    el.resultsHeading.textContent = "Here's what you all agreed on! 🎉";
+    el.resultsList.innerHTML = '';
+    let lastCount = null;
+    results.forEach((entry) => {
+      if (entry.likeCount !== lastCount) {
+        const heading = document.createElement('h3');
+        heading.className = 'results-tier-heading';
+        heading.textContent = entry.likeCount === total
+          ? `Everyone agreed (${entry.likeCount}/${total})`
+          : `${entry.likeCount} of ${total} liked this`;
+        el.resultsList.appendChild(heading);
+        lastCount = entry.likeCount;
+      }
+
+      const dish = entry.dish;
+      const mediaHtml = dish.imageUrl
+        ? `<div class="card-media"><img src="${dish.imageUrl}" alt="${escapeHtml(dish.name)}" onerror="this.parentElement.innerHTML='${escapeHtml(dish.emoji || '🍽️')}'" /></div>`
+        : `<div class="card-media">${escapeHtml(dish.emoji || '🍽️')}</div>`;
+
+      const item = document.createElement('div');
+      item.className = 'result-item';
+      item.innerHTML = `
+        ${mediaHtml}
+        <div class="result-info">
+          <h4>${escapeHtml(dish.name)}</h4>
+          <p>${escapeHtml([dish.area, dish.category].filter(Boolean).join(' · '))}</p>
+          <a class="btn btn-secondary" href="${entry.swiggyUrl}" target="_blank" rel="noopener noreferrer">Order on Swiggy</a>
+        </div>
+      `;
+      el.resultsList.appendChild(item);
+    });
   }
 
   // --- Landing actions ---
   el.createBtn.addEventListener('click', () => {
     clearLandingError();
-    ws.send('create_room', { mealTypes: getSelectedMealTypes() });
+    room.send('create_room', { mealTypes: getSelectedMealTypes() });
   });
 
   el.joinBtn.addEventListener('click', () => {
@@ -179,7 +210,7 @@
       showLandingError('Enter a valid room code.');
       return;
     }
-    ws.send('join_room', { roomCode: code });
+    room.send('join_room', { roomCode: code });
   });
 
   const urlRoom = new URLSearchParams(window.location.search).get('room');
@@ -200,77 +231,63 @@
   // --- Swipe actions ---
   el.likeBtn.addEventListener('click', () => deck.swipeCurrent('like'));
   el.passBtn.addEventListener('click', () => deck.swipeCurrent('pass'));
-  el.restartFromMatch.addEventListener('click', () => ws.send('restart_deck'));
-  el.restartFromNomatch.addEventListener('click', () => ws.send('restart_deck'));
+  el.restartFromResults.addEventListener('click', () => room.send('restart_deck'));
 
   el.closeRoomBtn.addEventListener('click', () => {
     if (window.confirm('Close this room for everyone?')) {
-      ws.send('close_room');
+      room.send('close_room');
     }
   });
 
   el.startGameBtn.addEventListener('click', () => {
-    ws.send('start_game');
+    room.send('start_game');
   });
 
   // --- Server events ---
-  ws.on('room_created', enterWaitingRoom);
-  ws.on('joined', enterWaitingRoom);
+  room.on('room_created', enterWaitingRoom);
+  room.on('joined', enterWaitingRoom);
 
-  ws.on('room_status', (msg) => {
+  room.on('room_status', (msg) => {
     state.occupiedCount = msg.occupiedCount;
     state.maxPlayers = msg.maxPlayers;
     state.minPlayersToStart = msg.minPlayersToStart;
     state.started = msg.started;
-    updateLobbyUI();
+    if (views.waiting.hidden === false) updateLobbyUI();
   });
 
-  ws.on('player_disconnected', () => {
-    el.opponentBanner.textContent = 'Someone disconnected — waiting…';
-    el.opponentBanner.hidden = false;
-  });
-
-  ws.on('player_reconnected', () => {
-    el.opponentBanner.hidden = true;
-  });
-
-  ws.on('room_closed', (msg) => {
+  room.on('room_closed', (msg) => {
     clearSession();
     const messages = {
-      partner_left: 'Your partner left the session.',
+      not_found: 'This session no longer exists.',
+      invalid_token: 'This session no longer exists.',
       closed_by_player: 'The room was closed.',
     };
     showLandingError(messages[msg.reason] || 'The session ended.');
     showView('landing');
   });
 
-  ws.on('deck_ready', (msg) => {
+  room.on('deck_ready', (msg) => {
     state.started = true;
     state.deckLength = msg.deck.length;
     state.lastDeck = msg.deck;
     deck.setDeck(msg.deck, 0);
     updateProgress();
-    el.opponentBanner.hidden = true;
     showView('swipe');
   });
 
-  ws.on('match_found', (msg) => {
-    renderDishCard(el.matchCard, msg.dish);
-    showView('match');
+  room.on('results_ready', (msg) => {
+    renderResults(msg.results);
+    showView('results');
   });
 
-  ws.on('deck_exhausted', () => {
-    showView('nomatch');
-  });
-
-  ws.on('swipe_ack', (msg) => {
+  room.on('swipe_ack', (msg) => {
     if (typeof msg.nextIndex === 'number' && state.lastDeck && msg.nextIndex !== deck.currentIndex()) {
       deck.setDeck(state.lastDeck, msg.nextIndex);
       updateProgress();
     }
   });
 
-  ws.on('error', (msg) => {
+  room.on('error', (msg) => {
     if (views.landing.hidden === false) {
       showLandingError(msg.message || 'Something went wrong.');
     } else if (msg.code === 'out_of_order' && typeof msg.nextIndex === 'number' && state.lastDeck) {
@@ -282,12 +299,12 @@
   });
 
   // --- Reconnect flow ---
-  ws.on('_open', () => {
+  room.on('_open', () => {
     const saved = loadSession();
     if (saved.roomCode && saved.playerToken) {
       state.roomCode = saved.roomCode;
       state.playerToken = saved.playerToken;
-      ws.send('rejoin', { roomCode: saved.roomCode, playerToken: saved.playerToken });
+      room.send('rejoin', { roomCode: saved.roomCode, playerToken: saved.playerToken });
     }
   });
 

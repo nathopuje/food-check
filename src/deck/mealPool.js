@@ -8,6 +8,7 @@ const CUISINE_AREAS = ['Indian'];
 const MIN_POOL_SIZE = 10;
 
 let pool = [];
+let poolFetchedAt = 0;
 let usingFallback = true;
 
 function dedupById(meals) {
@@ -37,33 +38,32 @@ async function fetchFreshPool() {
   return enrichWithMealTypes(dedupById(meals));
 }
 
-async function refreshPool() {
+/**
+ * Serverless functions don't keep a background process alive, so there's no
+ * setInterval to lean on here. Instead this fetches on demand, per
+ * invocation, with a soft time-based cache: within REFRESH_INTERVAL_MS of a
+ * successful fetch (which persists across warm container reuse) it reuses
+ * the in-memory pool; otherwise it fetches again before falling back.
+ */
+async function ensurePool() {
+  const isStale = Date.now() - poolFetchedAt > REFRESH_INTERVAL_MS;
+  if (pool.length > 0 && !isStale) return pool;
+
   try {
     const fresh = await fetchFreshPool();
-    if (fresh.length >= MIN_POOL_SIZE) {
-      pool = fresh;
-      usingFallback = false;
-      return;
+    if (fresh.length < MIN_POOL_SIZE) {
+      throw new Error(`MealDB pool too small (${fresh.length})`);
     }
-    throw new Error(`MealDB pool too small (${fresh.length})`);
+    pool = fresh;
+    usingFallback = false;
+    poolFetchedAt = Date.now();
   } catch (err) {
     if (pool.length === 0) {
       pool = loadFallbackMeals();
       usingFallback = true;
+      poolFetchedAt = Date.now();
     }
     console.warn(`[mealPool] Using ${usingFallback ? 'fallback' : 'stale cached'} meal data: ${err.message}`);
-  }
-}
-
-function startPoolRefresh() {
-  refreshPool();
-  setInterval(refreshPool, REFRESH_INTERVAL_MS).unref();
-}
-
-function getPool() {
-  if (pool.length === 0) {
-    pool = loadFallbackMeals();
-    usingFallback = true;
   }
   return pool;
 }
@@ -72,4 +72,4 @@ function isUsingFallback() {
   return usingFallback;
 }
 
-module.exports = { startPoolRefresh, getPool, isUsingFallback, POOL_TARGET_SIZE };
+module.exports = { ensurePool, isUsingFallback, POOL_TARGET_SIZE };
